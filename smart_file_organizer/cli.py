@@ -1,4 +1,7 @@
 from __future__ import annotations
+from smart_file_organizer.rules import (
+    build_file_info, rules_from_config, choose_destination
+)
 
 import json
 import shutil
@@ -56,25 +59,38 @@ def _scan_files(src: Path) -> List[Path]:
     return [p for p in src.rglob("*") if p.is_file()]
 
 
-def _plan_moves(files: List[Path], rules: Dict, dest: Path) -> List[Dict]:
-    # Minimal placeholder logic: group by extension into dest / ext / filename
+def _plan_moves(files: List[Path], cfg: Dict, dest: Path) -> List[Dict]:
+    """
+    Build a move/copy plan. Uses first-matching rule from config; if none matches,
+    falls back to grouping by extension.
+    """
+    rules = rules_from_config(cfg)
     plan = []
     for f in files:
-        ext = f.suffix.lower().lstrip(".") or "noext"
-        target_dir = dest / ext
-        target_dir.mkdir(parents=True, exist_ok=True)
+        fi = build_file_info(f)
+        rule, target_template = choose_destination(fi, rules)
+        if target_template is None:
+            # Fallback: by extension
+            subdir = fi.ext or "noext"
+            target_dir = dest / subdir
+        else:
+            # Rendered template may contain trailing slash(s)
+            target_dir = (dest / target_template).resolve()
         target = target_dir / f.name
-        plan.append({"src": str(f), "dst": str(target)})
+        plan.append({"src": str(f), "dst": str(target), "rule": rule.name if rule else "fallback_extension"})
     return plan
+
 
 
 def _print_plan(plan: List[Dict]):
     table = Table(title="Dry Run Plan")
     table.add_column("Source")
     table.add_column("Destination")
+    table.add_column("Rule")
     for step in plan:
-        table.add_row(step["src"], step["dst"])
+        table.add_row(step["src"], step["dst"], step.get("rule",""))
     print(table)
+
 
 
 @app.command("dry-run")
