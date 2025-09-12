@@ -1,0 +1,18 @@
+# SFO configuration (YAML)
+version: 1
+
+# Default policy:
+# action: move | copy (copy keeps source files)
+default_action: move
+
+# Rules are evaluated in order; first match wins.
+# This starter groups by extension. Later you can add:
+# - by regex on filename
+# - by MIME type
+# - by EXIF date for photos
+# - by created/modified date buckets
+rules:
+  - name: group_by_extension
+    type: extension
+    pattern: "*"
+    target_template: "{ext}/"

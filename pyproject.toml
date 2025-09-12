@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "smart-file-organizer"
+version = "0.1.0"
+description = "A safe, test-driven CLI to organize files by rules (type, date, regex), with dry-run and undo."
+authors = [{name = "Matthew Ballard", email = "igobymatthew@gmail.com"}]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "typer[all]>=0.12.3",
+    "PyYAML>=6.0.1",
+    "platformdirs>=4.2.0",
+    "rich>=13.7.1"
+]
+
+[project.scripts]
+sfo = "smart_file_organizer.cli:app"
+
+[tool.ruff]
+line-length = 100
+extend-select = ["I"]
+exclude = ["dist", "build"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q"
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["smart_file_organizer"]
+
+[tool.hatch.build.targets.sdist]
+include = ["smart_file_organizer", "README.md", "LICENSE", "pyproject.toml"]
