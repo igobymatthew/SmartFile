@@ -1,19 +1,32 @@
-from pathlib import Path
 import os
 import time
-from smart_file_organizer.rules import build_file_info, rules_from_config, choose_destination
+from pathlib import Path
+
+from smart_file_organizer.rules import build_file_info, choose_destination, rules_from_config
 
 CFG = {
     "rules": [
-        {"name": "imgs", "type": "extension", "pattern": "jpg,jpeg,png", "target_template": "images/{ext}/{yyyy}/{mm}/"},
-        {"name": "logs", "type": "regex", "pattern": r".*\.log$", "target_template": "logs/{yyyy}/{mm}/{dd}/"},
+        {
+            "name": "imgs",
+            "type": "extension",
+            "pattern": "jpg,jpeg,png",
+            "target_template": "images/{ext}/{yyyy}/{mm}/",
+        },
+        {
+            "name": "logs",
+            "type": "regex",
+            "pattern": r".*\.log$",
+            "target_template": "logs/{yyyy}/{mm}/{dd}/",
+        },
         {"name": "mtime_fallback", "type": "mtime", "target_template": "{yyyy}/{mm}/"},
     ]
 }
 
+
 def _touch_with_mtime(p: Path, ts: float):
     p.write_text("x")
     os.utime(p, (ts, ts))
+
 
 def test_extension_rule(tmp_path):
     f = tmp_path / "photo.JPG"
@@ -24,6 +37,7 @@ def test_extension_rule(tmp_path):
     assert rule is not None and rule.name == "imgs"
     assert "images/jpg/" in target.replace("\\", "/")
 
+
 def test_regex_rule(tmp_path):
     f = tmp_path / "server.log"
     _touch_with_mtime(f, time.time())
@@ -32,6 +46,7 @@ def test_regex_rule(tmp_path):
     rule, target = choose_destination(fi, rules)
     assert rule is not None and rule.name == "logs"
     assert "logs/" in target.replace("\\", "/")
+
 
 def test_mtime_fallback(tmp_path):
     f = tmp_path / "notes.txt"

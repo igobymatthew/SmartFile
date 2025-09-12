@@ -21,8 +21,10 @@ sfo = "smart_file_organizer.cli:app"
 
 [tool.ruff]
 line-length = 100
-extend-select = ["I"]
 exclude = ["dist", "build"]
+
+[tool.ruff.lint]
+extend-select = ["I"]  # import sorting
 
 [tool.pytest.ini_options]
 minversion = "7.0"
