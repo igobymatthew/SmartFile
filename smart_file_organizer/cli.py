@@ -3,18 +3,23 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
 
 import typer
+import yaml
+from platformdirs import user_config_path
 from rich import print
 from rich.table import Table
-from platformdirs import user_config_path
-import yaml
 
-app = typer.Typer(add_completion=False, help="""
+from smart_file_organizer.rules import build_file_info, choose_destination, rules_from_config
+
+app = typer.Typer(
+    add_completion=False,
+    help="""
 Smart File Organizer (SFO)
 Organize files by rules. Safe by default (dry-run, manifest-based undo).
-""")
+""",
+)
 
 
 DEFAULT_CONFIG_NAME = "config.yml"
@@ -40,7 +45,7 @@ def load_config(path: Optional[Path]) -> dict:
 def init(
     path: Optional[Path] = typer.Option(
         None, "--path", "-p", help="Optional path to write the default config to."
-    )
+    ),
 ):
     """Write a default YAML config to the OS config directory (or a given path)."""
     target = path or default_config_path()
@@ -56,15 +61,27 @@ def _scan_files(src: Path) -> List[Path]:
     return [p for p in src.rglob("*") if p.is_file()]
 
 
-def _plan_moves(files: List[Path], rules: Dict, dest: Path) -> List[Dict]:
-    # Minimal placeholder logic: group by extension into dest / ext / filename
+def _plan_moves(files: List[Path], cfg: Dict, dest: Path) -> List[Dict]:
+    """
+    Build a move/copy plan. Uses first-matching rule from config; if none matches,
+    falls back to grouping by extension.
+    """
+    rules = rules_from_config(cfg)
     plan = []
     for f in files:
-        ext = f.suffix.lower().lstrip(".") or "noext"
-        target_dir = dest / ext
-        target_dir.mkdir(parents=True, exist_ok=True)
+        fi = build_file_info(f)
+        rule, target_template = choose_destination(fi, rules)
+        if target_template is None:
+            # Fallback: by extension
+            subdir = fi.ext or "noext"
+            target_dir = dest / subdir
+        else:
+            # Rendered template may contain trailing slash(s)
+            target_dir = (dest / target_template).resolve()
         target = target_dir / f.name
-        plan.append({"src": str(f), "dst": str(target)})
+        plan.append(
+            {"src": str(f), "dst": str(target), "rule": rule.name if rule else "fallback_extension"}
+        )
     return plan
 
 
@@ -72,8 +89,9 @@ def _print_plan(plan: List[Dict]):
     table = Table(title="Dry Run Plan")
     table.add_column("Source")
     table.add_column("Destination")
+    table.add_column("Rule")
     for step in plan:
-        table.add_row(step["src"], step["dst"])
+        table.add_row(step["src"], step["dst"], step.get("rule", ""))
     print(table)
 
 

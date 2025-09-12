@@ -1,18 +1,30 @@
-# SFO configuration (YAML)
+# SFO configuration (YAML) — Rules Engine v1
 version: 1
 
-# Default policy:
-# action: move | copy (copy keeps source files)
-default_action: move
+default_action: move            # move | copy
+collision: rename               # skip | rename | overwrite
+trash_dir: "~/.local/share/sfo/trash"
 
-# Rules are evaluated in order; first match wins.
-# This starter groups by extension. Later you can add:
-# - by regex on filename
-# - by MIME type
-# - by EXIF date for photos
-# - by created/modified date buckets
+ignore:
+  - "**/.git/**"
+  - "**/node_modules/**"
+  - "**/.DS_Store"
+
+# Rules are evaluated in order; FIRST match wins.
+# Supported types (v1): extension | regex | mtime
+# target_template tokens available: {name} {ext} {yyyy} {mm} {dd}
 rules:
-  - name: group_by_extension
+  - name: images_by_extension
     type: extension
-    pattern: "*"
-    target_template: "{ext}/"
+    pattern: "jpg,jpeg,png"
+    target_template: "images/{ext}/{yyyy}/{mm}/"
+
+  - name: logs_by_regex
+    type: regex
+    pattern: ".*\\.log$"
+    target_template: "logs/{yyyy}/{mm}/{dd}/"
+
+  - name: everything_else_by_mtime
+    type: mtime
+    # optional: you could add a 'when' like "*.txt" to limit scope
+    target_template: "{yyyy}/{mm}/"
