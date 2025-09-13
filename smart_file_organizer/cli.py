@@ -117,15 +117,37 @@ def dry_run(
         typer.secho(f"Planned moves: {len(plan)} (no changes made)", fg=typer.colors.BLUE)
 
 
+def _get_unique_name(dest_path: Path) -> Path:
+    if not dest_path.exists():
+        return dest_path
+    parent = dest_path.parent
+    stem = dest_path.stem
+    ext = dest_path.suffix
+    i = 1
+    while True:
+        new_name = f"{stem}_({i}){ext}"
+        new_path = parent / new_name
+        if not new_path.exists():
+            return new_path
+        i += 1
+
+
 @app.command()
 def organize(
     src: Path = typer.Option(..., exists=True, file_okay=False, help="Source folder"),
     dest: Path = typer.Option(..., help="Destination folder (will be created)"),
     manifest: Path = typer.Option(Path("sfo-manifest.json"), help="Where to save undo manifest"),
     config: Optional[Path] = typer.Option(None, help="Path to YAML config"),
+    on_collision: Optional[str] = typer.Option(
+        None,
+        "--on-collision",
+        help="What to do in a file name collision (config: 'collision')",
+        case_sensitive=False,
+    ),
 ):
     """Apply the organization plan and save an undo manifest."""
     cfg = load_config(config)
+    collision_mode = on_collision or cfg.get("collision", "rename")
     files = _scan_files(src)
     plan = _plan_moves(files, cfg, dest)
     records = []
@@ -133,8 +155,20 @@ def organize(
         src_p = Path(step["src"])
         dst_p = Path(step["dst"])
         dst_p.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(src_p, dst_p)
-        records.append({"moved_from": str(src_p), "moved_to": str(dst_p)})
+
+        final_dst = dst_p
+        if dst_p.exists():
+            if collision_mode == "skip":
+                typer.secho(f"Skipped (exists): {dst_p}", fg=typer.colors.YELLOW)
+                continue
+            elif collision_mode == "overwrite":
+                typer.secho(f"Overwriting: {dst_p}", fg=typer.colors.YELLOW)
+            elif collision_mode == "rename":
+                final_dst = _get_unique_name(dst_p)
+                typer.secho(f"Renaming {dst_p.name} -> {final_dst.name}", fg=typer.colors.BLUE)
+
+        shutil.move(src_p, final_dst)
+        records.append({"moved_from": str(src_p), "moved_to": str(final_dst)})
     manifest.write_text(json.dumps(records, indent=2), encoding="utf-8")
     typer.secho(f"Done. Manifest written to {manifest}", fg=typer.colors.GREEN)
 
