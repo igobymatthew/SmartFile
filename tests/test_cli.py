@@ -78,3 +78,87 @@ def test_dry_run_json_output(tmp_path: Path):
     assert txt_move["rule"] == "fallback_extension"
     expected_dst = dest_dir / "txt" / "another.txt"
     assert Path(txt_move["dst"]) == expected_dst
+
+
+def test_organize_collision_handling(tmp_path: Path):
+    # 1. Setup: one source file, one conflicting destination file
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    src_file = src_dir / "test.txt"
+    src_file.write_text("source")
+
+    dest_dir = tmp_path / "dest"
+    dest_dir.mkdir()
+    dest_file_orig = dest_dir / "txt" / "test.txt"
+    dest_file_orig.parent.mkdir()
+    dest_file_orig.write_text("destination")
+
+    config_path = tmp_path / "config.yml"
+    config_data = {"version": 1, "rules": []}  # Use fallback extension rule
+    with config_path.open("w") as f:
+        yaml.dump(config_data, f)
+
+    # 2. Test 'skip'
+    result_skip = runner.invoke(
+        app,
+        [
+            "organize",
+            "--src",
+            str(src_dir),
+            "--dest",
+            str(dest_dir),
+            "--config",
+            str(config_path),
+            "--on-collision",
+            "skip",
+        ],
+    )
+    assert result_skip.exit_code == 0
+    assert "Skipped" in result_skip.stdout
+    assert src_file.exists()  # Not moved
+    assert dest_file_orig.read_text() == "destination"  # Unchanged
+
+    # 3. Test 'overwrite'
+    src_file.write_text("source_for_overwrite")  # Re-create src
+    result_overwrite = runner.invoke(
+        app,
+        [
+            "organize",
+            "--src",
+            str(src_dir),
+            "--dest",
+            str(dest_dir),
+            "--config",
+            str(config_path),
+            "--on-collision",
+            "overwrite",
+        ],
+    )
+    assert result_overwrite.exit_code == 0
+    assert "Overwriting" in result_overwrite.stdout
+    assert not src_file.exists()  # Moved
+    assert dest_file_orig.read_text() == "source_for_overwrite"  # Changed
+
+    # 4. Test 'rename'
+    src_file.write_text("source_for_rename")  # Re-create src
+    dest_file_orig.write_text("destination")  # Re-create dst
+    result_rename = runner.invoke(
+        app,
+        [
+            "organize",
+            "--src",
+            str(src_dir),
+            "--dest",
+            str(dest_dir),
+            "--config",
+            str(config_path),
+            "--on-collision",
+            "rename",
+        ],
+    )
+    assert result_rename.exit_code == 0
+    assert "Renaming" in result_rename.stdout
+    assert not src_file.exists()
+    renamed_file = dest_dir / "txt" / "test_(1).txt"
+    assert renamed_file.exists()
+    assert renamed_file.read_text() == "source_for_rename"
