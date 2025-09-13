@@ -100,13 +100,21 @@ def dry_run(
     src: Path = typer.Option(..., exists=True, file_okay=False, help="Source folder"),
     dest: Path = typer.Option(..., help="Destination folder (will be created)"),
     config: Optional[Path] = typer.Option(None, help="Path to YAML config"),
+    json_output: bool = typer.Option(False, "--json", help="Emit plan as JSON."),
+    pretty: bool = typer.Option(False, "--pretty", help="Pretty-print JSON output."),
 ):
     """Show what would happen without changing any files."""
-    _ = load_config(config)  # not yet used; placeholder for rules engine
+    cfg = load_config(config)
     files = _scan_files(src)
-    plan = _plan_moves(files, {}, dest)
-    _print_plan(plan)
-    typer.secho(f"Planned moves: {len(plan)} (no changes made)", fg=typer.colors.BLUE)
+    plan = _plan_moves(files, cfg, dest)
+
+    if json_output:
+        # NOTE: use typer.echo to avoid rich formatting ruining JSON
+        indent = 2 if pretty else None
+        typer.echo(json.dumps(plan, indent=indent))
+    else:
+        _print_plan(plan)
+        typer.secho(f"Planned moves: {len(plan)} (no changes made)", fg=typer.colors.BLUE)
 
 
 @app.command()
@@ -117,9 +125,9 @@ def organize(
     config: Optional[Path] = typer.Option(None, help="Path to YAML config"),
 ):
     """Apply the organization plan and save an undo manifest."""
-    _ = load_config(config)  # placeholder; rules TBD
+    cfg = load_config(config)
     files = _scan_files(src)
-    plan = _plan_moves(files, {}, dest)
+    plan = _plan_moves(files, cfg, dest)
     records = []
     for step in plan:
         src_p = Path(step["src"])
