@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import json
 import shutil
 from pathlib import Path
@@ -57,8 +58,19 @@ def init(
     typer.secho(f"Default config written to: {target}", fg=typer.colors.GREEN)
 
 
-def _scan_files(src: Path) -> List[Path]:
-    return [p for p in src.rglob("*") if p.is_file()]
+def _scan_files(src: Path, ignore_globs: List[str]) -> List[Path]:
+    """Scan for files, filtering out ignored ones."""
+    all_files = [p for p in src.rglob("*") if p.is_file()]
+    if not ignore_globs:
+        return all_files
+
+    kept_files = []
+    for p in all_files:
+        relative_path = p.relative_to(src).as_posix()
+        is_ignored = any(fnmatch.fnmatch(relative_path, glob) for glob in ignore_globs)
+        if not is_ignored:
+            kept_files.append(p)
+    return kept_files
 
 
 def _plan_moves(files: List[Path], cfg: Dict, dest: Path) -> List[Dict]:
@@ -105,7 +117,8 @@ def dry_run(
 ):
     """Show what would happen without changing any files."""
     cfg = load_config(config)
-    files = _scan_files(src)
+    ignore_globs = cfg.get("ignore", [])
+    files = _scan_files(src, ignore_globs)
     plan = _plan_moves(files, cfg, dest)
 
     if json_output:
@@ -153,7 +166,8 @@ def organize(
     """Apply the organization plan and save an undo manifest."""
     cfg = load_config(config)
     collision_mode = on_collision or cfg.get("collision", "rename")
-    files = _scan_files(src)
+    ignore_globs = cfg.get("ignore", [])
+    files = _scan_files(src, ignore_globs)
     plan = _plan_moves(files, cfg, dest)
     if trash:
         trash.mkdir(parents=True, exist_ok=True)

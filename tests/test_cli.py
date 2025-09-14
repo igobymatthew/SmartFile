@@ -228,3 +228,75 @@ def test_organize_trash_on_failure(tmp_path: Path):
 
     # Make dest writable again so cleanup can succeed
     (dest_dir / "txt").chmod(0o755)
+
+
+def test_dry_run_with_ignore_globs(tmp_path: Path):
+    # 1. Setup temp dirs and files
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    dest_dir = tmp_path / "dest"
+    dest_dir.mkdir()
+
+    # Files that should be processed
+    (src_dir / "my-image.jpg").touch()
+    (src_dir / "document.pdf").touch()
+
+    # Files that should be ignored
+    git_dir = src_dir / ".git"
+    git_dir.mkdir()
+    (git_dir / "config").touch()
+
+    node_modules_dir = src_dir / "node_modules"
+    node_modules_dir.mkdir()
+    (node_modules_dir / "dependency.js").touch()
+
+    (src_dir / ".DS_Store").touch()
+    (src_dir / "error.log").touch()
+    sub_dir = src_dir / "sub"
+    sub_dir.mkdir()
+    (sub_dir / ".DS_Store").touch()
+
+    # 2. Setup config with ignore rules
+    config_path = tmp_path / "config.yml"
+    config_data = {
+        "version": 1,
+        "ignore": ["**/.git/**", "**/node_modules/**", "**/.DS_Store", "**/*.log"],
+        "rules": [],  # Use fallback rules
+    }
+    with config_path.open("w") as f:
+        yaml.dump(config_data, f)
+
+    # 3. Run command
+    result = runner.invoke(
+        app,
+        [
+            "dry-run",
+            "--src",
+            str(src_dir),
+            "--dest",
+            str(dest_dir),
+            "--config",
+            str(config_path),
+            "--json",
+        ],
+    )
+
+    # 4. Assertions
+    assert result.exit_code == 0
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        assert False, f"Output is not valid JSON: {result.stdout}"
+
+    assert isinstance(data, list)
+    assert len(data) == 2
+
+    src_paths = {item["src"] for item in data}
+    assert str(src_dir / "my-image.jpg") in src_paths
+    assert str(src_dir / "document.pdf") in src_paths
+
+    assert str(git_dir / "config") not in src_paths
+    assert str(node_modules_dir / "dependency.js") not in src_paths
+    assert str(src_dir / ".DS_Store") not in src_paths
+    assert str(sub_dir / ".DS_Store") not in src_paths
+    assert str(src_dir / "error.log") not in src_paths
