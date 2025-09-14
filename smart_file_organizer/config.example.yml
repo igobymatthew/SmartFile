@@ -11,9 +11,17 @@ ignore:
   - "**/.DS_Store"
 
 # Rules are evaluated in order; FIRST match wins.
-# Supported types (v1): extension | regex | mtime
-# target_template tokens available: {name} {ext} {yyyy} {mm} {dd}
+# Supported types (v1): extension | regex | mtime | hash
+# target_template tokens available: {name} {ext} {yyyy} {mm} {dd} {hash} {hash_prefix}
 rules:
+  - name: dedupe_by_hash
+    type: hash
+    # all files not otherwise ignored will be hashed.
+    # first-seen files are moved according to target_template.
+    # subsequent identical files are moved to duplicates/{hash_prefix}.
+    target_template: "unique_files/"
+    hash_prefix_len: 2  # optional, default 2
+
   - name: images_by_extension
     type: extension
     pattern: "jpg,jpeg,png"
