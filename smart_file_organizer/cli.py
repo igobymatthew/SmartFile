@@ -66,8 +66,9 @@ def _scan_files(src: Path, ignore_globs: List[str]) -> List[Path]:
 
     kept_files = []
     for p in all_files:
-        relative_path = p.relative_to(src).as_posix()
-        is_ignored = any(fnmatch.fnmatch(relative_path, glob) for glob in ignore_globs)
+        # Match globs against the full path to allow for patterns like
+        # '**/node_modules/**' to work correctly.
+        is_ignored = any(fnmatch.fnmatch(p, glob) for glob in ignore_globs)
         if not is_ignored:
             kept_files.append(p)
     return kept_files
