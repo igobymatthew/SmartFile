@@ -144,12 +144,19 @@ def organize(
         help="What to do in a file name collision (config: 'collision')",
         case_sensitive=False,
     ),
+    trash: Optional[Path] = typer.Option(
+        None,
+        "--trash",
+        help="Stage files in this directory before final move.",
+    ),
 ):
     """Apply the organization plan and save an undo manifest."""
     cfg = load_config(config)
     collision_mode = on_collision or cfg.get("collision", "rename")
     files = _scan_files(src)
     plan = _plan_moves(files, cfg, dest)
+    if trash:
+        trash.mkdir(parents=True, exist_ok=True)
     records = []
     for step in plan:
         src_p = Path(step["src"])
@@ -166,9 +173,18 @@ def organize(
             elif collision_mode == "rename":
                 final_dst = _get_unique_name(dst_p)
                 typer.secho(f"Renaming {dst_p.name} -> {final_dst.name}", fg=typer.colors.BLUE)
-
-        shutil.move(src_p, final_dst)
-        records.append({"moved_from": str(src_p), "moved_to": str(final_dst)})
+        if trash:
+            try:
+                staged_path = trash / src_p.name
+                shutil.move(src_p, staged_path)
+                shutil.move(staged_path, final_dst)
+                records.append({"moved_from": str(src_p), "moved_to": str(final_dst)})
+            except Exception as e:
+                typer.secho(f"Error moving {src_p}: {e}. File saved in trash.", fg=typer.colors.RED)
+                records.append({"moved_from": str(src_p), "trashed_at": str(staged_path)})
+        else:
+            shutil.move(src_p, final_dst)
+            records.append({"moved_from": str(src_p), "moved_to": str(final_dst)})
     manifest.write_text(json.dumps(records, indent=2), encoding="utf-8")
     typer.secho(f"Done. Manifest written to {manifest}", fg=typer.colors.GREEN)
 

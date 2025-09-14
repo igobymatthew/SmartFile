@@ -31,6 +31,8 @@ sfo undo --manifest ./sfo-manifest.json
 - `init` – write a default config to the OS-appropriate config dir.
 - `dry-run` – print a plan of moves/copies without changing the filesystem.
 - `organize` – execute the plan and produce an undo manifest.
+  - `--on-collision`: What to do if a destination file already exists (`rename` (default), `overwrite`, `skip`).
+  - `--trash PATH`: Stage files in this directory before final move. On failure, the file remains in the trash and is recorded in the manifest.
 - `undo` – revert changes recorded in a manifest file.
 
 ## Configuration (YAML)
