@@ -162,3 +162,69 @@ def test_organize_collision_handling(tmp_path: Path):
     renamed_file = dest_dir / "txt" / "test_(1).txt"
     assert renamed_file.exists()
     assert renamed_file.read_text() == "source_for_rename"
+
+
+def test_organize_trash_on_failure(tmp_path: Path):
+    # 1. Setup: one source file, read-only destination
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    src_file = src_dir / "test.txt"
+    src_file.write_text("test content")
+
+    dest_dir = tmp_path / "dest"
+    dest_dir.mkdir()
+
+    trash_dir = tmp_path / "trash"
+    trash_dir.mkdir()
+
+    # Make destination read-only to cause a failure
+    (dest_dir / "txt").mkdir()
+    (dest_dir / "txt").chmod(0o555)
+
+    config_path = tmp_path / "config.yml"
+    config_data = {"version": 1, "rules": []}  # Use fallback
+    with config_path.open("w") as f:
+        yaml.dump(config_data, f)
+
+    manifest_path = tmp_path / "manifest.json"
+
+    # 2. Run command
+    result = runner.invoke(
+        app,
+        [
+            "organize",
+            "--src",
+            str(src_dir),
+            "--dest",
+            str(dest_dir),
+            "--config",
+            str(config_path),
+            "--trash",
+            str(trash_dir),
+            "--manifest",
+            str(manifest_path),
+        ],
+        catch_exceptions=False,
+    )
+
+    # 3. Assertions
+    assert result.exit_code == 0
+    assert "Error moving" in result.stdout
+    assert "File saved in trash" in result.stdout
+
+    # File should be in trash, not in src
+    assert not src_file.exists()
+    trashed_file = trash_dir / "test.txt"
+    assert trashed_file.exists()
+    assert trashed_file.read_text() == "test content"
+
+    # Manifest should record the failure
+    manifest_data = json.loads(manifest_path.read_text())
+    assert len(manifest_data) == 1
+    record = manifest_data[0]
+    assert record["moved_from"] == str(src_file)
+    assert "trashed_at" in record
+    assert Path(record["trashed_at"]) == trashed_file
+
+    # Make dest writable again so cleanup can succeed
+    (dest_dir / "txt").chmod(0o755)
