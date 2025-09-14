@@ -228,3 +228,79 @@ def test_organize_trash_on_failure(tmp_path: Path):
 
     # Make dest writable again so cleanup can succeed
     (dest_dir / "txt").chmod(0o755)
+
+
+def test_dry_run_with_ignore(tmp_path: Path):
+    # 1. Setup temp dirs and files
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    dest_dir = tmp_path / "dest"
+    dest_dir.mkdir()
+
+    # Files that should be processed
+    (src_dir / "file.txt").touch()
+    (src_dir / "image.jpg").touch()
+
+    # Files that should be ignored
+    (src_dir / ".DS_Store").touch()
+    git_dir = src_dir / ".git"
+    git_dir.mkdir()
+    (git_dir / "config").touch()
+    nm_dir = src_dir / "node_modules"
+    nm_dir.mkdir()
+    (nm_dir / "some-lib.js").touch()
+    specific_ignore_dir = src_dir / "ignore-this"
+    specific_ignore_dir.mkdir()
+    (specific_ignore_dir / "file.log").touch()
+
+    # 2. Setup config
+    config_path = tmp_path / "config.yml"
+    config_data = {
+        "version": 1,
+        "ignore": [
+            "**/.git/**",
+            "**/node_modules/**",
+            "**/.DS_Store",
+            "**/ignore-this/*",
+        ],
+        "rules": [
+            {
+                "name": "images",
+                "type": "extension",
+                "pattern": "jpg",
+                "target_template": "images/",
+            }
+        ],
+    }
+    with config_path.open("w") as f:
+        yaml.dump(config_data, f)
+
+    # 3. Run command
+    result = runner.invoke(
+        app,
+        [
+            "dry-run",
+                "--src",
+            str(src_dir),
+            "--dest",
+            str(dest_dir),
+            "--config",
+            str(config_path),
+            "--json",
+        ],
+    )
+
+    # 4. Assertions
+    assert result.exit_code == 0
+    plan = json.loads(result.stdout)
+
+    assert len(plan) == 2
+    src_paths = [item["src"] for item in plan]
+
+    assert str(src_dir / "file.txt") in src_paths
+    assert str(src_dir / "image.jpg") in src_paths
+
+    assert str(src_dir / ".DS_Store") not in src_paths
+    assert str(git_dir / "config") not in src_paths
+    assert str(nm_dir / "some-lib.js") not in src_paths
+    assert str(specific_ignore_dir / "file.log") not in src_paths
