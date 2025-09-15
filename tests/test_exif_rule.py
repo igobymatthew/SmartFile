@@ -1,12 +1,12 @@
 import os
 import time
-from pathlib import Path
 from datetime import datetime
+
 import piexif
+from PIL import Image
 
 from smart_file_organizer.rules import build_file_info, choose_destination, rules_from_config
 
-from PIL import Image
 
 # Helper function to create a test image with specific EXIF data
 def create_test_image_with_exif(tmp_path, filename, dt):

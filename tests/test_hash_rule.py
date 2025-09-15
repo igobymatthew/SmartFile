@@ -1,8 +1,10 @@
 import shutil
 from pathlib import Path
-from typer.testing import CliRunner
-from smart_file_organizer.cli import app
+
 import yaml
+from typer.testing import CliRunner
+
+from smart_file_organizer.cli import app
 
 runner = CliRunner()
 

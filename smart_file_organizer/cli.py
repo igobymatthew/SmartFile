@@ -23,6 +23,9 @@ Organize files by rules. Safe by default (dry-run, manifest-based undo).
 """,
 )
 
+rules_app = typer.Typer(name="rules", help="Manage and inspect rules.")
+app.add_typer(rules_app)
+
 
 DEFAULT_CONFIG_NAME = "config.yml"
 DEFAULT_APP_DIRNAME = "sfo"
@@ -251,6 +254,51 @@ def organize(
             records.append({"moved_from": str(src_p), "moved_to": str(final_dst)})
     manifest.write_text(json.dumps(records, indent=2), encoding="utf-8")
     typer.secho(f"Done. Manifest written to {manifest}", fg=typer.colors.GREEN)
+
+
+@rules_app.command("validate")
+def validate_rules(
+    config: Path = typer.Option(
+        ..., "--config", "-c", exists=True, help="Path to YAML config to validate."
+    ),
+):
+    """Validate the rules in a configuration file."""
+    try:
+        cfg = load_config(config)
+        rules_from_config(cfg)
+        typer.secho("✅ Config is valid.", fg=typer.colors.GREEN)
+    except (ValueError, KeyError) as e:
+        typer.secho(f"❌ Invalid config: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+
+@rules_app.command("explain")
+def explain_rule(
+    config: Path = typer.Option(..., "--config", "-c", exists=True, help="Path to YAML config."),
+    file: Path = typer.Option(..., "--file", "-f", exists=True, dir_okay=False, help="File to test against rules."),
+):
+    """Show which rule matches a file and what the destination would be."""
+    cfg = load_config(config)
+    try:
+        rules = rules_from_config(cfg)
+        # Check if hashing is needed
+        has_hash_rule = any(r.type == "hash" for r in rules)
+        hash_cache = {} if has_hash_rule else None
+
+        file_info = build_file_info(file, hash_cache=hash_cache)
+        rule, target_path = choose_destination(file_info, rules)
+
+        if rule:
+            print(f"File: '{file}'")
+            print(f" [bold green]✔[/bold green] Matched rule: '[bold]{rule.name}[/bold]' (type: {rule.type})")
+            print(f"   Destination: '{target_path}'")
+        else:
+            print(f"File: '{file}'")
+            print(" [bold yellow]✖[/bold yellow] No matching rule found.")
+
+    except (ValueError, KeyError) as e:
+        typer.secho(f"❌ Invalid config: {e}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
 
 
 @app.command()

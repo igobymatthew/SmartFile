@@ -201,21 +201,43 @@ def build_file_info(p: Path, hash_cache: Dict[Path, str] = None) -> FileInfo:
     )
 
 
+def _validate_rule_keys(name: str, rtype: str, rule_data: Dict):
+    """Check for unexpected keys in a rule definition."""
+    base_keys = {"name", "type", "when", "target_template"}
+    type_specific_keys = {
+        "extension": {"pattern"},
+        "regex": {"pattern"},
+        "mtime": set(),
+        "hash": {"hash_prefix_len"},
+        "exif_date": set(),
+    }
+    allowed_keys = base_keys.union(type_specific_keys.get(rtype, set()))
+    extra_keys = set(rule_data.keys()) - allowed_keys
+    if extra_keys:
+        raise ValueError(
+            f"Rule '{name}' (type: {rtype}) has unexpected keys: {', '.join(extra_keys)}"
+        )
+
+
 def rules_from_config(cfg: Dict) -> List[Rule]:
     rules: List[Rule] = []
     for item in cfg.get("rules") or []:
         rtype = (item.get("type") or "").strip().lower()
         name = item.get("name") or f"rule_{len(rules) + 1}"
+        _validate_rule_keys(name, rtype, item)
         pattern = item.get("pattern")
         when = item.get("when")
-        target_template = item["target_template"]  # required
+        target_template = item.get("target_template")
+        if not target_template:
+            raise ValueError(f"Rule '{name}' is missing required key 'target_template'")
+
         if rtype == "extension":
             if not pattern:
-                raise ValueError(f"Rule '{name}' type=extension requires 'pattern'")
+                raise ValueError(f"Rule '{name}' (type=extension) requires 'pattern'")
             rules.append(make_extension_rule(name, pattern, target_template, when))
         elif rtype == "regex":
             if not pattern:
-                raise ValueError(f"Rule '{name}' type=regex requires 'pattern'")
+                raise ValueError(f"Rule '{name}' (type=regex) requires 'pattern'")
             rules.append(make_regex_rule(name, pattern, target_template, when))
         elif rtype == "mtime":
             rules.append(make_mtime_rule(name, target_template, when))
