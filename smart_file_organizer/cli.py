@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import fnmatch
 import json
 import shutil
@@ -74,27 +75,69 @@ def _scan_files(src: Path, ignore_globs: List[str]) -> List[Path]:
     return kept_files
 
 
-def _plan_moves(files: List[Path], cfg: Dict, dest: Path) -> List[Dict]:
+def _build_file_infos_parallel(
+    files: List[Path], hash_cache: Dict[Path, str], max_workers: int
+) -> List[Dict]:
+    """Build FileInfo objects in parallel to speed up hashing."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_file = {
+            executor.submit(build_file_info, f, hash_cache): f for f in files
+        }
+        results = []
+        for future in concurrent.futures.as_completed(future_to_file):
+            results.append(future.result())
+        return results
+
+
+def _plan_moves(
+    files: List[Path], cfg: Dict, dest: Path, max_workers_hashing: int
+) -> List[Dict]:
     """
     Build a move/copy plan. Uses first-matching rule from config; if none matches,
     falls back to grouping by extension.
     """
     rules = rules_from_config(cfg)
     plan = []
-    for f in files:
-        fi = build_file_info(f)
+    hash_cache: Dict[Path, str] = {}
+    seen_hashes: Dict[str, Path] = {}
+
+    # Determine if any hash rules are active
+    has_hash_rule = any(r.type == "hash" for r in rules)
+
+    # Efficiently build FileInfo objects, with hashing if needed
+    if has_hash_rule:
+        file_infos = _build_file_infos_parallel(
+            files, hash_cache, max_workers=max_workers_hashing
+        )
+    else:
+        file_infos = [build_file_info(f) for f in files]
+
+    for fi in file_infos:
         rule, target_template = choose_destination(fi, rules)
-        if target_template is None:
+
+        if rule and rule.type == "hash":
+            if fi.file_hash in seen_hashes:
+                # This is a duplicate
+                prefix = fi.file_hash[: rule.hash_prefix_len]
+                target_dir = dest / "duplicates" / prefix
+                rule_name = f"{rule.name} (duplicate)"
+            else:
+                # First time seeing this hash
+                seen_hashes[fi.file_hash] = fi.path
+                target_dir = (dest / target_template).resolve()
+                rule_name = rule.name
+        elif target_template is None:
             # Fallback: by extension
             subdir = fi.ext or "noext"
             target_dir = dest / subdir
+            rule_name = "fallback_extension"
         else:
             # Rendered template may contain trailing slash(s)
             target_dir = (dest / target_template).resolve()
-        target = target_dir / f.name
-        plan.append(
-            {"src": str(f), "dst": str(target), "rule": rule.name if rule else "fallback_extension"}
-        )
+            rule_name = rule.name if rule else "fallback_no_rule"
+
+        target = target_dir / fi.path.name
+        plan.append({"src": str(fi.path), "dst": str(target), "rule": rule_name})
     return plan
 
 
@@ -115,12 +158,15 @@ def dry_run(
     config: Optional[Path] = typer.Option(None, help="Path to YAML config"),
     json_output: bool = typer.Option(False, "--json", help="Emit plan as JSON."),
     pretty: bool = typer.Option(False, "--pretty", help="Pretty-print JSON output."),
+    max_workers_hashing: int = typer.Option(
+        4, help="Max parallel workers for hashing."
+    ),
 ):
     """Show what would happen without changing any files."""
     cfg = load_config(config)
     ignore_globs = cfg.get("ignore", [])
     files = _scan_files(src, ignore_globs)
-    plan = _plan_moves(files, cfg, dest)
+    plan = _plan_moves(files, cfg, dest, max_workers_hashing)
 
     if json_output:
         # NOTE: use typer.echo to avoid rich formatting ruining JSON
@@ -163,13 +209,16 @@ def organize(
         "--trash",
         help="Stage files in this directory before final move.",
     ),
+    max_workers_hashing: int = typer.Option(
+        4, help="Max parallel workers for hashing."
+    ),
 ):
     """Apply the organization plan and save an undo manifest."""
     cfg = load_config(config)
     collision_mode = on_collision or cfg.get("collision", "rename")
     ignore_globs = cfg.get("ignore", [])
     files = _scan_files(src, ignore_globs)
-    plan = _plan_moves(files, cfg, dest)
+    plan = _plan_moves(files, cfg, dest, max_workers_hashing)
     if trash:
         trash.mkdir(parents=True, exist_ok=True)
     records = []
