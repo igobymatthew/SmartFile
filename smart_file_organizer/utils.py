@@ -1,7 +1,6 @@
 # This file is forked from https://github.com/ai-powered-dev/swe-agent/blob/main/docs/examples/sfo/smart_file_organizer/utils.py
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -51,9 +50,7 @@ def sanitize_filename(name: str) -> str:
     # Symbols: < > : " / \ | ? *
     # Also remove control characters (0-31)
     # Ref: https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file
-    sanitized = "".join(
-        "_" if c in '<>:"/\\|?*' or ord(c) < 32 else c for c in name
-    )
+    sanitized = "".join("_" if c in '<>:"/\\|?*' or ord(c) < 32 else c for c in name)
 
     # Handle reserved names on Windows
     if is_windows_reserved_name(sanitized):

@@ -20,7 +20,7 @@ def test_hash_rule_with_duplicates(tmp_path: Path):
     (src_dir / "file2.txt").write_text("content2")
     (src_dir / "file3.txt").write_text("content1")  # Duplicate of file1.txt
     (src_dir / "image1.jpg").write_text("image_content")
-    (src_dir / "image2.jpg").write_text("image_content") # Duplicate of image1.jpg
+    (src_dir / "image2.jpg").write_text("image_content")  # Duplicate of image1.jpg
 
     config_data = {
         "rules": [
@@ -61,7 +61,7 @@ def test_hash_rule_with_duplicates(tmp_path: Path):
     # The exact hash is difficult to predict, but we can check the structure
     dupes_dir = dest_dir / "duplicates"
     assert dupes_dir.exists()
-    assert len(list(dupes_dir.iterdir())) == 2 # two different hash prefixes
+    assert len(list(dupes_dir.iterdir())) == 2  # two different hash prefixes
 
     # Clean up
     shutil.rmtree(src_dir)

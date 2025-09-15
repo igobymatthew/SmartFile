@@ -140,9 +140,7 @@ def make_hash_rule(
     )
 
 
-def make_exif_date_rule(
-    name: str, target_template: str, when: Optional[str] = None
-) -> Rule:
+def make_exif_date_rule(name: str, target_template: str, when: Optional[str] = None) -> Rule:
     def match(fi: FileInfo) -> bool:
         if when and not Path(fi.path.name).match(when):
             return False

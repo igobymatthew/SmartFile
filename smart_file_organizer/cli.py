@@ -86,18 +86,14 @@ def _build_file_infos_parallel(
 ) -> List[Dict]:
     """Build FileInfo objects in parallel to speed up hashing."""
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_file = {
-            executor.submit(build_file_info, f, hash_cache): f for f in files
-        }
+        future_to_file = {executor.submit(build_file_info, f, hash_cache): f for f in files}
         results = []
         for future in concurrent.futures.as_completed(future_to_file):
             results.append(future.result())
         return results
 
 
-def _plan_moves(
-    files: List[Path], cfg: Dict, dest: Path, max_workers_hashing: int
-) -> List[Dict]:
+def _plan_moves(files: List[Path], cfg: Dict, dest: Path, max_workers_hashing: int) -> List[Dict]:
     """
     Build a move/copy plan. Uses first-matching rule from config; if none matches,
     falls back to grouping by extension.
@@ -112,9 +108,7 @@ def _plan_moves(
 
     # Efficiently build FileInfo objects, with hashing if needed
     if has_hash_rule:
-        file_infos = _build_file_infos_parallel(
-            files, hash_cache, max_workers=max_workers_hashing
-        )
+        file_infos = _build_file_infos_parallel(files, hash_cache, max_workers=max_workers_hashing)
     else:
         file_infos = [build_file_info(f) for f in files]
 
@@ -172,9 +166,7 @@ def dry_run(
     config: Optional[Path] = typer.Option(None, help="Path to YAML config"),
     json_output: bool = typer.Option(False, "--json", help="Emit plan as JSON."),
     pretty: bool = typer.Option(False, "--pretty", help="Pretty-print JSON output."),
-    max_workers_hashing: int = typer.Option(
-        4, help="Max parallel workers for hashing."
-    ),
+    max_workers_hashing: int = typer.Option(4, help="Max parallel workers for hashing."),
 ):
     """Show what would happen without changing any files."""
     cfg = load_config(config)
@@ -248,9 +240,7 @@ def organize(
         "--trash",
         help="Stage files in this directory before final move.",
     ),
-    max_workers_hashing: int = typer.Option(
-        4, help="Max parallel workers for hashing."
-    ),
+    max_workers_hashing: int = typer.Option(4, help="Max parallel workers for hashing."),
     log_file: Optional[Path] = typer.Option(
         None, "--log-file", help="Emit JSONL logs to this file."
     ),
@@ -281,25 +271,24 @@ def organize(
                 _log_action(log_file, "overwrite", src_p, dst_p, rule_name)
             elif collision_mode == "rename":
                 final_dst = _get_unique_name(dst_p)
-                typer.secho(
-                    f"Renaming {dst_p.name} -> {final_dst.name}", fg=typer.colors.BLUE
-                )
+                typer.secho(f"Renaming {dst_p.name} -> {final_dst.name}", fg=typer.colors.BLUE)
                 _log_action(log_file, "rename", src_p, final_dst, rule_name)
         if trash:
             try:
                 staged_path = trash / src_p.name
                 shutil.move(win_long_path(src_p), win_long_path(staged_path))
                 shutil.move(win_long_path(staged_path), win_long_path(final_dst))
-                records.append(
-                    {"moved_from": src_p.as_posix(), "moved_to": final_dst.as_posix()}
-                )
+                records.append({"moved_from": src_p.as_posix(), "moved_to": final_dst.as_posix()})
                 _log_action(log_file, "move", src_p, final_dst, rule_name)
             except PermissionError as e:
                 typer.secho(f"Permission error moving {src_p.as_posix()}: {e}", fg=typer.colors.RED)
                 records.append({"moved_from": src_p.as_posix(), "error": str(e)})
                 _log_action(log_file, "permission_error", src_p, dst_p, rule_name, level="error")
             except Exception as e:
-                typer.secho(f"Error moving {src_p.as_posix()}: {e}. File saved in trash.", fg=typer.colors.RED)
+                typer.secho(
+                    f"Error moving {src_p.as_posix()}: {e}. File saved in trash.",
+                    fg=typer.colors.RED,
+                )
                 records.append(
                     {
                         "moved_from": src_p.as_posix(),
@@ -349,7 +338,9 @@ def validate_rules(
 @rules_app.command("explain")
 def explain_rule(
     config: Path = typer.Option(..., "--config", "-c", exists=True, help="Path to YAML config."),
-    file: Path = typer.Option(..., "--file", "-f", exists=True, dir_okay=False, help="File to test against rules."),
+    file: Path = typer.Option(
+        ..., "--file", "-f", exists=True, dir_okay=False, help="File to test against rules."
+    ),
 ):
     """Show which rule matches a file and what the destination would be."""
     cfg = load_config(config)
@@ -364,7 +355,9 @@ def explain_rule(
 
         if rule:
             print(f"File: '{file.as_posix()}'")
-            print(f" [bold green]✔[/bold green] Matched rule: '[bold]{rule.name}[/bold]' (type: {rule.type})")
+            print(
+                f" [bold green]✔[/bold green] Matched rule: '[bold]{rule.name}[/bold]' (type: {rule.type})"
+            )
             print(f"   Destination: '{target_path}'")
         else:
             print(f"File: '{file.as_posix()}'")
