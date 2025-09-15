@@ -1,0 +1,22 @@
+[
+  {
+    "moved_from": "/tmp/pytest-of-jules/pytest-2/test_hash_rule_with_duplicates0/src/file1.txt",
+    "moved_to": "/tmp/pytest-of-jules/pytest-2/test_hash_rule_with_duplicates0/dest/unique_files/file1.txt"
+  },
+  {
+    "moved_from": "/tmp/pytest-of-jules/pytest-2/test_hash_rule_with_duplicates0/src/file3.txt",
+    "moved_to": "/tmp/pytest-of-jules/pytest-2/test_hash_rule_with_duplicates0/dest/duplicates/d0b4/file3.txt"
+  },
+  {
+    "moved_from": "/tmp/pytest-of-jules/pytest-2/test_hash_rule_with_duplicates0/src/file2.txt",
+    "moved_to": "/tmp/pytest-of-jules/pytest-2/test_hash_rule_with_duplicates0/dest/unique_files/file2.txt"
+  },
+  {
+    "moved_from": "/tmp/pytest-of-jules/pytest-2/test_hash_rule_with_duplicates0/src/image2.jpg",
+    "moved_to": "/tmp/pytest-of-jules/pytest-2/test_hash_rule_with_duplicates0/dest/unique_files/image2.jpg"
+  },
+  {
+    "moved_from": "/tmp/pytest-of-jules/pytest-2/test_hash_rule_with_duplicates0/src/image1.jpg",
+    "moved_to": "/tmp/pytest-of-jules/pytest-2/test_hash_rule_with_duplicates0/dest/duplicates/9299/image1.jpg"
+  }
+]

@@ -18,7 +18,9 @@ def test_organize_with_reserved_name(tmp_path: Path):
     # 1. Setup
     src_dir = tmp_path / "src"
     src_dir.mkdir()
-    (src_dir / "con.txt").touch()  # A reserved name on Windows
+    # On Windows, creating a file with a reserved name requires the `\\?\` prefix
+    src_file = src_dir / "con.txt"
+    Path(f"\\\\?\\{src_file.resolve()}").touch()
 
     dest_dir = tmp_path / "dest"
     dest_dir.mkdir()
