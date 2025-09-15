@@ -48,7 +48,8 @@ class Rule:
             "hash": fi.file_hash or "",
             "hash_prefix": hash_prefix,
         }
-        return self.target_template.format(**tokens)
+        # Always return POSIX-style paths for consistency
+        return self.target_template.format(**tokens).replace("\\", "/")
 
 
 def _csv_to_set(csv: Optional[str]) -> set[str]:
@@ -139,9 +140,7 @@ def make_hash_rule(
     )
 
 
-def make_exif_date_rule(
-    name: str, target_template: str, when: Optional[str] = None
-) -> Rule:
+def make_exif_date_rule(name: str, target_template: str, when: Optional[str] = None) -> Rule:
     def match(fi: FileInfo) -> bool:
         if when and not Path(fi.path.name).match(when):
             return False
