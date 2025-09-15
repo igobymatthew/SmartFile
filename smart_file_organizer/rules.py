@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
+
+import piexif
 
 
 @dataclass
@@ -15,6 +18,7 @@ class FileInfo:
     ext: str  # no leading dot
     mtime: datetime
     file_hash: Optional[str] = None
+    exif_dt: Optional[datetime] = None
 
 
 @dataclass
@@ -32,12 +36,15 @@ class Rule:
         if fi.file_hash:
             hash_prefix = fi.file_hash[: self.hash_prefix_len]
 
+        # Use EXIF date if available, otherwise fall back to mtime
+        dt = fi.exif_dt or fi.mtime
+
         tokens = {
             "name": fi.name,
             "ext": (fi.ext or "noext").lower(),  # 👈 safe lowercase
-            "yyyy": f"{fi.mtime.year:04d}",
-            "mm": f"{fi.mtime.month:02d}",
-            "dd": f"{fi.mtime.day:02d}",
+            "yyyy": f"{dt.year:04d}",
+            "mm": f"{dt.month:02d}",
+            "dd": f"{dt.day:02d}",
             "hash": fi.file_hash or "",
             "hash_prefix": hash_prefix,
         }
@@ -132,6 +139,38 @@ def make_hash_rule(
     )
 
 
+def make_exif_date_rule(
+    name: str, target_template: str, when: Optional[str] = None
+) -> Rule:
+    def match(fi: FileInfo) -> bool:
+        if when and not Path(fi.path.name).match(when):
+            return False
+        # This rule applies to any file, but logic in render_target handles the date choice.
+        return True
+
+    return Rule(
+        name=name,
+        type="exif_date",
+        pattern=None,
+        when=when,
+        target_template=target_template,
+        matcher=match,
+    )
+
+
+def _get_exif_date(path: Path) -> Optional[datetime]:
+    """Extract EXIF 'DateTimeOriginal' from an image, if possible."""
+    try:
+        exif_dict = piexif.load(str(path))
+        datetime_original = exif_dict.get("Exif", {}).get(piexif.ExifIFD.DateTimeOriginal)
+        if datetime_original:
+            return datetime.strptime(datetime_original.decode("utf-8"), "%Y:%m:%d %H:%M:%S")
+    except Exception as e:
+        # This can fail for many reasons: file not an image, no EXIF, etc.
+        logging.debug(f"Could not read EXIF from {path}: {e}")
+    return None
+
+
 def build_file_info(p: Path, hash_cache: Dict[Path, str] = None) -> FileInfo:
     stat = p.stat()
     mtime = datetime.fromtimestamp(stat.st_mtime)
@@ -147,12 +186,18 @@ def build_file_info(p: Path, hash_cache: Dict[Path, str] = None) -> FileInfo:
             file_hash = hasher.hexdigest()
             hash_cache[p] = file_hash
 
+    # Attempt to get EXIF date for common image types
+    exif_dt = None
+    if p.suffix.lower() in [".jpg", ".jpeg", ".tiff"]:
+        exif_dt = _get_exif_date(p)
+
     return FileInfo(
         path=p,
         name=p.stem,
         ext=p.suffix.lstrip(".").lower(),  # 👈 force lowercase here
         mtime=mtime,
         file_hash=file_hash,
+        exif_dt=exif_dt,
     )
 
 
@@ -177,6 +222,8 @@ def rules_from_config(cfg: Dict) -> List[Rule]:
         elif rtype == "hash":
             hash_prefix_len = item.get("hash_prefix_len", 2)
             rules.append(make_hash_rule(name, target_template, when, hash_prefix_len))
+        elif rtype == "exif_date":
+            rules.append(make_exif_date_rule(name, target_template, when))
         else:
             raise ValueError(f"Unsupported rule type: {rtype} (rule '{name}')")
     return rules
