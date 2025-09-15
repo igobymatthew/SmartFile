@@ -1,6 +1,8 @@
 import json
+import os
 from pathlib import Path
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
@@ -165,6 +167,9 @@ def test_organize_collision_handling(tmp_path: Path):
 
 
 def test_organize_trash_on_failure(tmp_path: Path):
+    if os.geteuid() == 0:
+        pytest.skip("Cannot simulate permission error when running as root")
+
     # 1. Setup: one source file, read-only destination
     src_dir = tmp_path / "src"
     src_dir.mkdir()

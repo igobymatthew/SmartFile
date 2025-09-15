@@ -35,6 +35,16 @@ sfo undo --manifest ./sfo-manifest.json
   - `--trash PATH`: Stage files in this directory before final move. On failure, the file remains in the trash and is recorded in the manifest.
 - `undo` – revert changes recorded in a manifest file.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    P[Planner] --> E[Executor]
+    E --> M[Manifest]
+```
+
+The planner analyzes your files and configuration to create a plan. The executor performs the moves and copies, while the manifest records actions so they can be undone later.
+
 ## Configuration (YAML)
 See `config.example.yml` for a complete schema with comments.
 
