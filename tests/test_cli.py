@@ -300,3 +300,73 @@ def test_dry_run_with_ignore_globs(tmp_path: Path):
     assert str(src_dir / ".DS_Store") not in src_paths
     assert str(sub_dir / ".DS_Store") not in src_paths
     assert str(src_dir / "error.log") not in src_paths
+
+
+def test_organize_with_logging(tmp_path: Path):
+    # 1. Setup
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    (src_dir / "image.jpg").touch()
+    (src_dir / "doc.txt").touch()
+
+    dest_dir = tmp_path / "dest"
+    dest_dir.mkdir()
+
+    log_file = tmp_path / "events.log"
+
+    config_path = tmp_path / "config.yml"
+    config_data = {
+        "version": 1,
+        "rules": [
+            {
+                "name": "images",
+                "type": "extension",
+                "pattern": "jpg",
+                "target_template": "pictures/",
+            }
+        ],
+    }
+    with config_path.open("w") as f:
+        yaml.dump(config_data, f)
+
+    # 2. Run organize with logging
+    result = runner.invoke(
+        app,
+        [
+            "organize",
+            "--src",
+            str(src_dir),
+            "--dest",
+            str(dest_dir),
+            "--config",
+            str(config_path),
+            "--log-file",
+            str(log_file),
+        ],
+    )
+
+    # 3. Assertions
+    assert result.exit_code == 0
+    assert log_file.exists()
+
+    # Verify log content
+    log_lines = log_file.read_text().strip().split("\n")
+    assert len(log_lines) == 2
+
+    logs = [json.loads(line) for line in log_lines]
+
+    # Check image log entry
+    image_log = next((log for log in logs if "image.jpg" in log["src"]), None)
+    assert image_log is not None
+    assert image_log["action"] == "move"
+    assert "pictures" in image_log["dst"]
+    assert image_log["rule"] == "images"
+    assert "ts" in image_log
+    assert "level" in image_log
+
+    # Check document log entry
+    doc_log = next((log for log in logs if "doc.txt" in log["src"]), None)
+    assert doc_log is not None
+    assert doc_log["action"] == "move"
+    assert "txt" in doc_log["dst"]  # Fallback rule
+    assert doc_log["rule"] == "fallback_extension"
