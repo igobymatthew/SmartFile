@@ -15,6 +15,7 @@ from rich import print
 from rich.table import Table
 
 from smart_file_organizer.rules import build_file_info, choose_destination, rules_from_config
+from smart_file_organizer.utils import sanitize_filename, win_long_path
 
 app = typer.Typer(
     add_completion=False,
@@ -55,7 +56,8 @@ def init(
 ):
     """Write a default YAML config to the OS config directory (or a given path)."""
     target = path or default_config_path()
-    target.parent.mkdir(parents=True, exist_ok=True)
+    # Use long-path-safe mkdir
+    Path(win_long_path(target.parent)).mkdir(parents=True, exist_ok=True)
     if target.exists():
         typer.confirm(f"{target} exists. Overwrite?", abort=True)
     example = (Path(__file__).parent / "config.example.yml").read_text(encoding="utf-8")
@@ -140,8 +142,16 @@ def _plan_moves(
             target_dir = (dest / target_template).resolve()
             rule_name = rule.name if rule else "fallback_no_rule"
 
-        target = target_dir / fi.path.name
-        plan.append({"src": str(fi.path), "dst": str(target), "rule": rule_name})
+        # Sanitize the filename to avoid issues with reserved names or chars
+        sanitized_name = sanitize_filename(fi.path.name)
+        target = target_dir / sanitized_name
+        plan.append(
+            {
+                "src": fi.path.as_posix(),
+                "dst": target.as_posix(),
+                "rule": rule_name,
+            }
+        )
     return plan
 
 
@@ -182,7 +192,9 @@ def dry_run(
 
 
 def _get_unique_name(dest_path: Path) -> Path:
-    if not dest_path.exists():
+    """Find a unique filename by appending a counter, e.g., `file_(1).txt`."""
+    # Use long-path-safe existence check
+    if not Path(win_long_path(dest_path)).exists():
         return dest_path
     parent = dest_path.parent
     stem = dest_path.stem
@@ -191,7 +203,7 @@ def _get_unique_name(dest_path: Path) -> Path:
     while True:
         new_name = f"{stem}_({i}){ext}"
         new_path = parent / new_name
-        if not new_path.exists():
+        if not Path(win_long_path(new_path)).exists():
             return new_path
         i += 1
 
@@ -211,8 +223,8 @@ def _log_action(
         "ts": datetime.now(timezone.utc).isoformat(),
         "level": level,
         "action": action,
-        "src": str(src),
-        "dst": str(dst),
+        "src": src.as_posix(),
+        "dst": dst.as_posix(),
         "rule": rule,
     }
     with log_file.open("a", encoding="utf-8") as f:
@@ -250,42 +262,70 @@ def organize(
     files = _scan_files(src, ignore_globs)
     plan = _plan_moves(files, cfg, dest, max_workers_hashing)
     if trash:
-        trash.mkdir(parents=True, exist_ok=True)
+        Path(win_long_path(trash)).mkdir(parents=True, exist_ok=True)
     records = []
     for step in plan:
         src_p = Path(step["src"])
         dst_p = Path(step["dst"])
         rule_name = step.get("rule", "unknown")
-        dst_p.parent.mkdir(parents=True, exist_ok=True)
+        Path(win_long_path(dst_p.parent)).mkdir(parents=True, exist_ok=True)
 
         final_dst = dst_p
-        if dst_p.exists():
+        if Path(win_long_path(dst_p)).exists():
             if collision_mode == "skip":
-                typer.secho(f"Skipped (exists): {dst_p}", fg=typer.colors.YELLOW)
+                typer.secho(f"Skipped (exists): {dst_p.as_posix()}", fg=typer.colors.YELLOW)
                 _log_action(log_file, "skip", src_p, dst_p, rule_name)
                 continue
             elif collision_mode == "overwrite":
-                typer.secho(f"Overwriting: {dst_p}", fg=typer.colors.YELLOW)
+                typer.secho(f"Overwriting: {dst_p.as_posix()}", fg=typer.colors.YELLOW)
                 _log_action(log_file, "overwrite", src_p, dst_p, rule_name)
             elif collision_mode == "rename":
                 final_dst = _get_unique_name(dst_p)
-                typer.secho(f"Renaming {dst_p.name} -> {final_dst.name}", fg=typer.colors.BLUE)
+                typer.secho(
+                    f"Renaming {dst_p.name} -> {final_dst.name}", fg=typer.colors.BLUE
+                )
                 _log_action(log_file, "rename", src_p, final_dst, rule_name)
         if trash:
             try:
                 staged_path = trash / src_p.name
-                shutil.move(src_p, staged_path)
-                shutil.move(staged_path, final_dst)
-                records.append({"moved_from": str(src_p), "moved_to": str(final_dst)})
+                shutil.move(win_long_path(src_p), win_long_path(staged_path))
+                shutil.move(win_long_path(staged_path), win_long_path(final_dst))
+                records.append(
+                    {"moved_from": src_p.as_posix(), "moved_to": final_dst.as_posix()}
+                )
                 _log_action(log_file, "move", src_p, final_dst, rule_name)
+            except PermissionError as e:
+                typer.secho(f"Permission error moving {src_p.as_posix()}: {e}", fg=typer.colors.RED)
+                records.append({"moved_from": src_p.as_posix(), "error": str(e)})
+                _log_action(log_file, "permission_error", src_p, dst_p, rule_name, level="error")
             except Exception as e:
-                typer.secho(f"Error moving {src_p}: {e}. File saved in trash.", fg=typer.colors.RED)
-                records.append({"moved_from": str(src_p), "trashed_at": str(staged_path)})
+                typer.secho(f"Error moving {src_p.as_posix()}: {e}. File saved in trash.", fg=typer.colors.RED)
+                records.append(
+                    {
+                        "moved_from": src_p.as_posix(),
+                        "trashed_at": staged_path.as_posix(),
+                        "error": str(e),
+                    }
+                )
                 _log_action(log_file, "trash_error", src_p, staged_path, rule_name, level="error")
         else:
-            shutil.move(src_p, final_dst)
-            records.append({"moved_from": str(src_p), "moved_to": str(final_dst)})
-            _log_action(log_file, "move", src_p, final_dst, rule_name)
+            try:
+                shutil.move(win_long_path(src_p), win_long_path(final_dst))
+                records.append(
+                    {
+                        "moved_from": src_p.as_posix(),
+                        "moved_to": final_dst.as_posix(),
+                    }
+                )
+                _log_action(log_file, "move", src_p, final_dst, rule_name)
+            except PermissionError as e:
+                typer.secho(f"Permission error moving {src_p.as_posix()}: {e}", fg=typer.colors.RED)
+                records.append({"moved_from": src_p.as_posix(), "error": str(e)})
+                _log_action(log_file, "permission_error", src_p, dst_p, rule_name, level="error")
+            except Exception as e:
+                typer.secho(f"Error moving {src_p.as_posix()}: {e}", fg=typer.colors.RED)
+                records.append({"moved_from": src_p.as_posix(), "error": str(e)})
+                _log_action(log_file, "move_error", src_p, dst_p, rule_name, level="error")
     manifest.write_text(json.dumps(records, indent=2), encoding="utf-8")
     typer.secho(f"Done. Manifest written to {manifest}", fg=typer.colors.GREEN)
 
@@ -323,11 +363,11 @@ def explain_rule(
         rule, target_path = choose_destination(file_info, rules)
 
         if rule:
-            print(f"File: '{file}'")
+            print(f"File: '{file.as_posix()}'")
             print(f" [bold green]✔[/bold green] Matched rule: '[bold]{rule.name}[/bold]' (type: {rule.type})")
             print(f"   Destination: '{target_path}'")
         else:
-            print(f"File: '{file}'")
+            print(f"File: '{file.as_posix()}'")
             print(" [bold yellow]✖[/bold yellow] No matching rule found.")
 
     except (ValueError, KeyError) as e:
@@ -342,14 +382,17 @@ def undo(
     """Undo moves recorded in a manifest (best-effort)."""
     data = json.loads(manifest.read_text(encoding="utf-8"))
     for rec in reversed(data):
+        # Gracefully handle records from failed moves in trash
+        if "moved_to" not in rec:
+            continue
         src = Path(rec["moved_to"])
         dst = Path(rec["moved_from"])
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        if src.exists():
-            shutil.move(src, dst)
-            typer.echo(f"Restored: {dst}")
+        Path(win_long_path(dst.parent)).mkdir(parents=True, exist_ok=True)
+        if Path(win_long_path(src)).exists():
+            shutil.move(win_long_path(src), win_long_path(dst))
+            typer.echo(f"Restored: {dst.as_posix()}")
         else:
-            typer.echo(f"Skip missing: {src}")
+            typer.echo(f"Skip missing: {src.as_posix()}")
     typer.secho("Undo complete.", fg=typer.colors.YELLOW)
 
 

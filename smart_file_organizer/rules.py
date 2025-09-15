@@ -48,7 +48,8 @@ class Rule:
             "hash": fi.file_hash or "",
             "hash_prefix": hash_prefix,
         }
-        return self.target_template.format(**tokens)
+        # Always return POSIX-style paths for consistency
+        return self.target_template.format(**tokens).replace("\\", "/")
 
 
 def _csv_to_set(csv: Optional[str]) -> set[str]:

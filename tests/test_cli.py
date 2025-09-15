@@ -214,8 +214,8 @@ def test_organize_trash_on_failure(tmp_path: Path):
 
     # 3. Assertions
     assert result.exit_code == 0
-    assert "Error moving" in result.stdout
-    assert "File saved in trash" in result.stdout
+    # The move from trash to dest fails, so we get a specific error.
+    assert "Permission error" in result.stdout
 
     # File should be in trash, not in src
     assert not src_file.exists()
@@ -227,9 +227,8 @@ def test_organize_trash_on_failure(tmp_path: Path):
     manifest_data = json.loads(manifest_path.read_text())
     assert len(manifest_data) == 1
     record = manifest_data[0]
-    assert record["moved_from"] == str(src_file)
-    assert "trashed_at" in record
-    assert Path(record["trashed_at"]) == trashed_file
+    assert record["moved_from"] == src_file.as_posix()
+    assert "error" in record
 
     # Make dest writable again so cleanup can succeed
     (dest_dir / "txt").chmod(0o755)
