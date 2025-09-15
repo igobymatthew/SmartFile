@@ -3,7 +3,9 @@ from __future__ import annotations
 import concurrent.futures
 import fnmatch
 import json
+import logging
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -195,6 +197,29 @@ def _get_unique_name(dest_path: Path) -> Path:
         i += 1
 
 
+def _log_action(
+    log_file: Path,
+    action: str,
+    src: Path,
+    dst: Path,
+    rule: str,
+    level: str = "info",
+):
+    """Emit a JSONL log entry."""
+    if not log_file:
+        return
+    log_entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "level": level,
+        "action": action,
+        "src": str(src),
+        "dst": str(dst),
+        "rule": rule,
+    }
+    with log_file.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(log_entry) + "\n")
+
+
 @app.command()
 def organize(
     src: Path = typer.Option(..., exists=True, file_okay=False, help="Source folder"),
@@ -215,6 +240,9 @@ def organize(
     max_workers_hashing: int = typer.Option(
         4, help="Max parallel workers for hashing."
     ),
+    log_file: Optional[Path] = typer.Option(
+        None, "--log-file", help="Emit JSONL logs to this file."
+    ),
 ):
     """Apply the organization plan and save an undo manifest."""
     cfg = load_config(config)
@@ -228,30 +256,37 @@ def organize(
     for step in plan:
         src_p = Path(step["src"])
         dst_p = Path(step["dst"])
+        rule_name = step.get("rule", "unknown")
         dst_p.parent.mkdir(parents=True, exist_ok=True)
 
         final_dst = dst_p
         if dst_p.exists():
             if collision_mode == "skip":
                 typer.secho(f"Skipped (exists): {dst_p}", fg=typer.colors.YELLOW)
+                _log_action(log_file, "skip", src_p, dst_p, rule_name)
                 continue
             elif collision_mode == "overwrite":
                 typer.secho(f"Overwriting: {dst_p}", fg=typer.colors.YELLOW)
+                _log_action(log_file, "overwrite", src_p, dst_p, rule_name)
             elif collision_mode == "rename":
                 final_dst = _get_unique_name(dst_p)
                 typer.secho(f"Renaming {dst_p.name} -> {final_dst.name}", fg=typer.colors.BLUE)
+                _log_action(log_file, "rename", src_p, final_dst, rule_name)
         if trash:
             try:
                 staged_path = trash / src_p.name
                 shutil.move(src_p, staged_path)
                 shutil.move(staged_path, final_dst)
                 records.append({"moved_from": str(src_p), "moved_to": str(final_dst)})
+                _log_action(log_file, "move", src_p, final_dst, rule_name)
             except Exception as e:
                 typer.secho(f"Error moving {src_p}: {e}. File saved in trash.", fg=typer.colors.RED)
                 records.append({"moved_from": str(src_p), "trashed_at": str(staged_path)})
+                _log_action(log_file, "trash_error", src_p, staged_path, rule_name, level="error")
         else:
             shutil.move(src_p, final_dst)
             records.append({"moved_from": str(src_p), "moved_to": str(final_dst)})
+            _log_action(log_file, "move", src_p, final_dst, rule_name)
     manifest.write_text(json.dumps(records, indent=2), encoding="utf-8")
     typer.secho(f"Done. Manifest written to {manifest}", fg=typer.colors.GREEN)
 
